@@ -4,6 +4,7 @@ let gameCode; let playerId; let phase;
 let orient = 'H';
 const shipsToPlace = [];
 
+// DOM elements
 const newGameBtn = document.getElementById('newGameBtn');
 const joinGameBtn = document.getElementById('joinGameBtn');
 const gameCodeInput = document.getElementById('gameCodeInput');
@@ -66,40 +67,45 @@ document.getElementById('orientationToggle').addEventListener('click',()=>{
   orientSpan.textContent = orient;
 });
 
-newGameBtn.onclick = ()=>socket.emit('newGame');
-joinGameBtn.onclick = ()=>socket.emit('joinGame',{ gameCode:gameCodeInput.value.toUpperCase() });
+newGameBtn.onclick = () => socket.emit('newGame');
+joinGameBtn.onclick = () => {
+  const code = gameCodeInput.value.toUpperCase();
+  gameCode = code;
+  socket.emit('joinGame', { gameCode: code });
+};
 
-socket.on('gameCreated',({gameCode:code})=>{
-  gameCode=code;playerId=socket.id;
-  alert('Game Code: '+code);
+socket.on('gameCreated', ({ gameCode: code }) => {
+  gameCode = code; playerId = socket.id;
+  alert('Game Code: ' + code);
 });
 
-socket.on('gameStarted',({state})=>{
-  phase=state.phase;
-  menu.hidden=true;gameUI.hidden=false;
-  renderBoards(); statusDiv.textContent='Place ships';
+socket.on('gameStarted', ({ state }) => {
+  phase = state.phase;
+  menu.hidden = true; gameUI.hidden = false;
+  renderBoards(); statusDiv.textContent = 'Place ships';
 });
 
-socket.on('phaseChange',({phase:newPhase})=>{
-  phase=newPhase; statusDiv.textContent='Firing phase';
+socket.on('phaseChange', ({ phase: newPhase }) => {
+  phase = newPhase; statusDiv.textContent = 'Firing phase';
 });
 
-socket.on('turnChange',({currentTurn})=>{
+socket.on('turnChange', ({ currentTurn }) => {
   statusDiv.textContent = currentTurn===socket.id?'Your turn':'Opponent turn';
 });
 
 oppBoard.addEventListener('click', e=>{
-  if(phase!=='firing')return;
-  const x=+e.target.dataset.x, y=+e.target.dataset.y;
-  socket.emit('fire',{ gameCode,x,y });
+  if(phase!=='firing') return;
+  const x = +e.target.dataset.x;
+  const y = +e.target.dataset.y;
+  socket.emit('fire', { gameCode, x, y });
 });
 
-socket.on('shotResult',({shooter,x,y,hit,sunk,winner})=>{
-  const board = shooter===socket.id? oppBoard: ownBoard;
+socket.on('shotResult', ({ shooter, x, y, hit, sunk, winner }) => {
+  const board = shooter===socket.id? oppBoard : ownBoard;
   const cell = board.querySelector(`.cell[data-x='${x}'][data-y='${y}']`);
   cell.classList.add(hit?'hit':'miss');
-  if(sunk.length) statusDiv.textContent+=' Ship sunk!';
+  if(sunk.length) statusDiv.textContent += ' Ship sunk!';
   if(winner) statusDiv.textContent = winner===socket.id?'You win!':'You lose.';
 });
 
-socket.on('err',({message})=>alert(message));
+socket.on('err', ({ message }) => alert(message));
