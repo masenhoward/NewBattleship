@@ -35,15 +35,22 @@ io.on('connection', (socket) => {
 
   // 2) Join an existing game
   socket.on('joinGame', ({ gameCode }) => {
-    const game = games[gameCode];
-    if (!game) {
-      socket.emit('err', { message: 'Game not found' });
-      return;
-    }
-    if (game.players.length > 2) {
-      socket.emit('err', { message: 'Game full' });
-      return;
-    }
+  const game = games[gameCode];
+  if (!game) {
+    socket.emit('err', { message: 'Game not found' });
+    return;
+  }
+
+  // NEW: if this socket is already one of the players, don’t let them re-join
+  if (game.players.includes(socket.id)) {
+    socket.emit('err', { message: 'You’re already in this game' });
+    return;
+  }
+
+  if (game.players.length >= 2) {
+    socket.emit('err', { message: 'Game full' });
+    return;
+  }
 
     game.players.push(socket.id);
     socket.join(gameCode);
