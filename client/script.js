@@ -1,111 +1,200 @@
-// === client/script.js ===
+// script.js
 const socket = io();
-let gameCode; let playerId; let phase;
-let orient = 'H';
+
+const newGameBtn       = document.getElementById('newGameBtn');
+const joinGameBtn      = document.getElementById('joinGameBtn');
+const gameCodeInput    = document.getElementById('gameCodeInput');
+const menu             = document.getElementById('menu');
+const statusEl         = document.getElementById('status');
+const yourBoardEl      = document.getElementById('yourBoard');
+const opponentBoardEl  = document.getElementById('opponentBoard');
+
+let gameCode = null;
+let playerId = null;
+let phase    = 'waiting';
+let currentTurn = null;
+
+// Placement state
+let orientation = 'horizontal';
+const shipLengths = [5, 4, 3, 3, 2];
+let currentShipIndex = 0;
 const shipsToPlace = [];
 
-// DOM elements
-const newGameBtn = document.getElementById('newGameBtn');
-const joinGameBtn = document.getElementById('joinGameBtn');
-const gameCodeInput = document.getElementById('gameCodeInput');
-const menu = document.getElementById('menu');
-const gameUI = document.getElementById('gameUI');
-const shipPicker = document.getElementById('shipPicker');
-const orientSpan = document.getElementById('orient');
-const ownBoard = document.getElementById('ownBoard');
-const oppBoard = document.getElementById('opponentBoard');
-const statusDiv = document.getElementById('status');
-
-// Setup boards
-function renderBoards() {
-  ownBoard.innerHTML = ''; oppBoard.innerHTML='';
-  for (let y=0;y<10;y++)for(let x=0;x<10;x++){
-    [ownBoard,oppBoard].forEach(board=>{
-      const cell=document.createElement('div');cell.className='cell';
-      cell.dataset.x=x;cell.dataset.y=y;
-      board.appendChild(cell);
-    });
-  }
-}
-
-// Drag & drop handlers
-shipPicker.addEventListener('dragstart', e=>{
-  if(e.target.classList.contains('ship')){
-    e.dataTransfer.setData('text/plain', e.target.dataset.length);
-  }
+// ── Helper: Orientation toggle button ──────────────────────────────
+const rotateBtn = document.createElement('button');
+rotateBtn.id = 'rotateBtn';
+rotateBtn.textContent = 'Orientation: Horizontal';
+rotateBtn.style.marginLeft = '10px';
+rotateBtn.addEventListener('click', () => {
+  orientation = orientation === 'horizontal' ? 'vertical' : 'horizontal';
+  rotateBtn.textContent =
+    'Orientation: ' + orientation.charAt(0).toUpperCase() + orientation.slice(1);
 });
-ownBoard.addEventListener('dragover', e=>e.preventDefault());
-ownBoard.addEventListener('drop', e=>{
-  e.preventDefault();
-  const len = +e.dataTransfer.getData('text');
-  const x0 = +e.target.dataset.x;
-  const y0 = +e.target.dataset.y;
-  const coords = [];
-  for(let i=0;i<len;i++){
-    const x = orient==='H'? x0+i : x0;
-    const y = orient==='V'? y0+i : y0;
-    if(x>9||y>9) return alert('Out of bounds');
-    coords.push({x,y,hit:false});
-  }
-  // mark on UI
-  coords.forEach(c=>{
-    ownBoard.querySelector(`.cell[data-x='${c.x}'][data-y='${c.y}']`).classList.add('ship');
-  });
-  shipsToPlace.push({ id:Date.now()+Math.random(), coords });
-  e.target.remove();
-  if(shipsToPlace.length===5) {
-    // done placing
-    socket.emit('placeShips',{ gameCode, ships:shipsToPlace });
-    statusDiv.textContent='Waiting for opponent...';
-    shipPicker.hidden=true;
-  }
-});
+menu.appendChild(rotateBtn);
 
-// Orientation toggle
-document.getElementById('orientationToggle').addEventListener('click',()=>{
-  orient = orient==='H'?'V':'H';
-  orientSpan.textContent = orient;
+// ── Game setup controls ────────────────────────────────────────────
+newGameBtn.addEventListener('click', () => {
+  socket.emit('newGame');
 });
-
-newGameBtn.onclick = () => socket.emit('newGame');
-joinGameBtn.onclick = () => {
-  const code = gameCodeInput.value.toUpperCase();
-  gameCode = code;
+joinGameBtn.addEventListener('click', () => {
+  const code = gameCodeInput.value.trim().toUpperCase();
+  if (!code) return alert('Please enter a game code');
   socket.emit('joinGame', { gameCode: code });
-};
+});
 
+// ── Socket.io event handlers ──────────────────────────────────────
 socket.on('gameCreated', ({ gameCode: code }) => {
-  gameCode = code; playerId = socket.id;
-  alert('Game Code: ' + code);
+  gameCode = code;
+  playerId = socket.id;
+  alert(`Game Code: ${code}`);
+  joinGameBtn.disabled = true;
+  gameCodeInput.disabled = true;
+});
+
+socket.on('playerJoined', () => {
+  statusEl.textContent = 'Opponent joined. Waiting to start…';
 });
 
 socket.on('gameStarted', ({ state }) => {
   phase = state.phase;
-  menu.hidden = true; gameUI.hidden = false;
-  renderBoards(); statusDiv.textContent = 'Place ships';
+  currentTurn = state.currentTurn;
+  statusEl.textContent = `Place ship of length ${shipLengths[currentShipIndex]}`;
+  renderBoards();
 });
 
 socket.on('phaseChange', ({ phase: newPhase }) => {
-  phase = newPhase; statusDiv.textContent = 'Firing phase';
+  phase = newPhase;
+  if (phase === 'firing') {
+    statusEl.textContent =
+      currentTurn === playerId ? 'Your turn to fire' : "Opponent's turn";
+  }
 });
 
-socket.on('turnChange', ({ currentTurn }) => {
-  statusDiv.textContent = currentTurn===socket.id?'Your turn':'Opponent turn';
+socket.on('turnChange', ({ currentTurn: turn }) => {
+  currentTurn = turn;
+  statusEl.textContent =
+    currentTurn === playerId ? 'Your turn to fire' : "Opponent's turn";
 });
 
-oppBoard.addEventListener('click', e=>{
-  if(phase!=='firing') return;
+socket.on('shotResult', ({ shooter, x, y, hit }) => {
+  // Mark hit/miss on the appropriate board
+  const boardEl = shooter === playerId ? opponentBoardEl : yourBoardEl;
+  const cell = boardEl.querySelector(`.cell[data-x="${x}"][data-y="${y}"]`);
+  cell.classList.add(hit ? 'hit' : 'miss');
+});
+
+socket.on('gameOver', ({ winner }) => {
+  statusEl.textContent = winner === playerId ? 'You win!' : 'You lose.';
+});
+
+socket.on('err', ({ message }) => {
+  alert(message);
+});
+
+// ── Render and interaction ─────────────────────────────────────────
+function renderBoards() {
+  // Clear any old cells
+  yourBoardEl.innerHTML = '';
+  opponentBoardEl.innerHTML = '';
+
+  // Build 10×10 grids
+  for (let y = 0; y < 10; y++) {
+    for (let x = 0; x < 10; x++) {
+      const a = document.createElement('div');
+      a.className = 'cell';
+      a.dataset.x = x;
+      a.dataset.y = y;
+      yourBoardEl.appendChild(a);
+
+      const b = document.createElement('div');
+      b.className = 'cell';
+      b.dataset.x = x;
+      b.dataset.y = y;
+      opponentBoardEl.appendChild(b);
+    }
+  }
+
+  // Hook up placement listeners only during setup
+  if (phase === 'placing') {
+    yourBoardEl.addEventListener('mouseover', handlePreview);
+    yourBoardEl.addEventListener('mouseout', clearPreview);
+    yourBoardEl.addEventListener('click', handlePlaceShip);
+  }
+}
+
+// Preview ship on hover
+function handlePreview(e) {
+  if (!e.target.classList.contains('cell')) return;
+  clearPreview();
+
+  const x = +e.target.dataset.x;
+  const y = +e.target.dataset.y;
+  const length = shipLengths[currentShipIndex];
+  const previewCells = [];
+
+  for (let i = 0; i < length; i++) {
+    const xx = orientation === 'horizontal' ? x + i : x;
+    const yy = orientation === 'horizontal' ? y : y + i;
+    const cell = yourBoardEl.querySelector(`.cell[data-x="${xx}"][data-y="${yy}"]`);
+    if (!cell || cell.classList.contains('ship')) {
+      // invalid placement, abort preview
+      clearPreview();
+      return;
+    }
+    previewCells.push(cell);
+  }
+
+  previewCells.forEach(c => c.classList.add('preview'));
+}
+
+// Remove all previews
+function clearPreview() {
+  yourBoardEl.querySelectorAll('.cell.preview').forEach(c => {
+    c.classList.remove('preview');
+  });
+}
+
+// Place the ship on click
+function handlePlaceShip(e) {
+  if (!e.target.classList.contains('cell')) return;
+  const length = shipLengths[currentShipIndex];
+  const previewCells = Array.from(
+    yourBoardEl.querySelectorAll('.cell.preview')
+  );
+  if (previewCells.length !== length) return; // only valid if full preview
+
+  // Commit placement
+  const coords = previewCells.map(c => {
+    c.classList.remove('preview');
+    c.classList.add('ship');
+    return { x: +c.dataset.x, y: +c.dataset.y, hit: false };
+  });
+
+  shipsToPlace.push({ id: currentShipIndex, coordinates: coords });
+  currentShipIndex++;
+  clearPreview();
+
+  if (currentShipIndex < shipLengths.length) {
+    statusEl.textContent = `Place ship of length ${shipLengths[currentShipIndex]}`;
+  } else {
+    // Done placing all ships
+    yourBoardEl.removeEventListener('mouseover', handlePreview);
+    yourBoardEl.removeEventListener('mouseout', clearPreview);
+    yourBoardEl.removeEventListener('click', handlePlaceShip);
+    rotateBtn.disabled = true;
+
+    statusEl.textContent = 'Waiting on opponent...';
+    socket.emit('placeShips', { gameCode, ships: shipsToPlace });
+  }
+}
+
+// Firing clicks
+opponentBoardEl.addEventListener('click', e => {
+  if (phase !== 'firing') return;
+  if (currentTurn !== playerId) return;
+  if (!e.target.classList.contains('cell')) return;
+
   const x = +e.target.dataset.x;
   const y = +e.target.dataset.y;
   socket.emit('fire', { gameCode, x, y });
 });
-
-socket.on('shotResult', ({ shooter, x, y, hit, sunk, winner }) => {
-  const board = shooter===socket.id? oppBoard : ownBoard;
-  const cell = board.querySelector(`.cell[data-x='${x}'][data-y='${y}']`);
-  cell.classList.add(hit?'hit':'miss');
-  if(sunk.length) statusDiv.textContent += ' Ship sunk!';
-  if(winner) statusDiv.textContent = winner===socket.id?'You win!':'You lose.';
-});
-
-socket.on('err', ({ message }) => alert(message));
