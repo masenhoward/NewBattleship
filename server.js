@@ -1,80 +1,159 @@
-// === server.js ===
+// server.js
 const express = require('express');
-const http = require('http');
+const http    = require('http');
+const path    = require('path');
 const { Server } = require('socket.io');
-const path = require('path');
 
-const app = express();
+const app    = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io     = new Server(server);
 
-// Serve client folder
+// serve everything under client/ as static assets
 app.use(express.static(path.join(__dirname, 'client')));
 
-const games = {};
+// in-memory store of all games
+const games = {};  // { [gameCode]: { players: [socketId,...], state: { phase, currentTurn, ships, shots } } }
+
+// simple 6-char uppercase code generator
 function generateGameCode() {
   return Math.random().toString(36).substr(2, 6).toUpperCase();
 }
 
-io.on('connection', socket => {
-  console.log('Connected:', socket.id);
+// initial empty state for a new game
+function createInitialState() {
+  return {
+    phase: 'waiting',
+    currentTurn: null,
+    ships: [ [], [] ],       // two players’ ship arrays
+    shots: {}                // { socketId: [ { x,y,hit } ] }
+  };
+}
 
+// helper to see if any ship at (x,y)
+function checkHit(ships, x, y) {
+  return ships.some(ship =>
+    ship.coordinates.some(c => c.x === x && c.y === y)
+  );
+}
+
+function recordShot(state, shooter, x, y, hit) {
+  state.shots[shooter] = state.shots[shooter]||[];
+  state.shots[shooter].push({ x, y, hit });
+}
+
+function checkSunk(ships) {
+  return ships
+    .filter(ship => ship.coordinates.every(c => c.hit))
+    .map(ship => ship.id);
+}
+
+function checkWin(ships) {
+  return ships.every(ship =>
+    ship.coordinates.every(c => c.hit)
+  );
+}
+
+io.on('connection', socket => {
+  console.log('connect', socket.id);
+
+  // Host starts a new game
   socket.on('newGame', () => {
     const code = generateGameCode();
-    games[code] = { players: [socket.id], state: createState() };
+    games[code] = {
+      players: [socket.id],
+      state: createInitialState()
+    };
     socket.join(code);
     socket.emit('gameCreated', { gameCode: code });
   });
 
+  // Joiner enters an existing code
   socket.on('joinGame', ({ gameCode }) => {
     const game = games[gameCode];
-    if (!game) return socket.emit('err', { message: 'Game not found' });
-    if (game.players.includes(socket.id)) return;
-    if (game.players.length >= 2) return socket.emit('err', { message: 'Game full' });
+    if (!game) {
+      socket.emit('err', { message: 'Game not found' });
+      return;
+    }
+    if (game.players.includes(socket.id)) {
+      socket.emit('err', { message: 'Already joined' });
+      return;
+    }
+    if (game.players.length >= 2) {
+      socket.emit('err', { message: 'Game full' });
+      return;
+    }
+
     game.players.push(socket.id);
     socket.join(gameCode);
+    io.in(gameCode).emit('playerJoined', {});
+
+    // start placement once two players present
     if (game.players.length === 2) {
-      game.state.phase = 'placing';
+      game.state.phase       = 'placing';
       game.state.currentTurn = game.players[0];
       io.in(gameCode).emit('gameStarted', { state: game.state });
     }
   });
 
+  // Both players send their ship arrays when done placing
   socket.on('placeShips', ({ gameCode, ships }) => {
-    const game = games[gameCode]; if (!game) return;
+    const game = games[gameCode];
+    if (!game) return;
     const idx = game.players.indexOf(socket.id);
+    if (idx < 0) return;
+
     game.state.ships[idx] = ships;
-    if (game.state.ships.every(s => s.length)) {
+    // once both have placed
+    if (game.state.ships.every(arr => arr.length > 0)) {
       game.state.phase = 'firing';
       io.in(gameCode).emit('phaseChange', { phase: 'firing' });
     }
   });
 
+  // Handle a shot
   socket.on('fire', ({ gameCode, x, y }) => {
     const game = games[gameCode];
     if (!game || game.state.phase !== 'firing') return;
     if (socket.id !== game.state.currentTurn) return;
-    const opponentId = game.players.find(id => id !== socket.id);
-    const oppIdx = game.players.indexOf(opponentId);
-    const hit = checkHit(game.state.ships[oppIdx], x, y);
+
+    // find opponent
+    const oppIndex = game.players[0] === socket.id ? 1 : 0;
+    const oppId    = game.players[oppIndex];
+
+    // register hit
+    const hit = checkHit(game.state.ships[oppIndex], x, y);
+
+    // mark that coordinate “hit” if true
+    if (hit) {
+      game.state.ships[oppIndex]
+        .find(ship => ship.coordinates.some(c=>c.x===x&&c.y===y))
+        .coordinates.find(c=>c.x===x&&c.y===y).hit = true;
+    }
+
     recordShot(game.state, socket.id, x, y, hit);
-    const sunk = checkSunk(game.state.ships[oppIdx]);
-    const winner = checkWin(game.state.ships[oppIdx]) ? socket.id : null;
+    const sunk   = checkSunk(game.state.ships[oppIndex]);
+    const winner = checkWin(game.state.ships[oppIndex]) ? socket.id : null;
+
+    // broadcast result
     io.in(gameCode).emit('shotResult', { shooter: socket.id, x, y, hit, sunk, winner });
+
     if (winner) {
       game.state.phase = 'game_over';
       io.in(gameCode).emit('gameOver', { winner });
     } else {
-      game.state.currentTurn = opponentId;
-      io.in(gameCode).emit('turnChange', { currentTurn: opponentId });
+      // switch turn
+      game.state.currentTurn = oppId;
+      io.in(gameCode).emit('turnChange', { currentTurn: oppId });
     }
   });
 
+  // cleanup if someone disconnects
   socket.on('disconnect', () => {
-    for (const code in games) {
-      const game = games[code];
-      const i = game.players.indexOf(socket.id);
+    for (let code in games) {
+      const g = games[code];
+      const i = g.players.indexOf(socket.id);
       if (i !== -1) {
+        io.in(code).emit('playerLeft', {});
         delete games[code];
         break;
       }
@@ -82,20 +161,6 @@ io.on('connection', socket => {
   });
 });
 
-function createState() {
-  return { phase: 'waiting', currentTurn: null, ships: [[], []], shots: {} };
-}
-function checkHit(ships, x, y) {
-  return ships.some(ship => ship.coords.some(c => c.x === x && c.y === y));
-}
-function recordShot(state, shooter, x, y, hit) {
-  if (!state.shots[shooter]) state.shots[shooter] = [];
-  state.shots[shooter].push({ x, y, hit });
-}
-function checkSunk(ships) {
-  return ships.filter(s => s.coords.every(c => c.hit)).map(s => s.id);
-}
-function checkWin(ships) { return ships.every(s => s.coords.every(c => c.hit)); }
-
+// start listening
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server up on ${PORT}`));
+server.listen(PORT, () => console.log(`Server on ${PORT}`));
