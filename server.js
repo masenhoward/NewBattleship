@@ -40,7 +40,7 @@ io.on('connection', (socket) => {
       socket.emit('err', { message: 'Game not found' });
       return;
     }
-    if (game.players.length >= 2) {
+    if (game.players.length > 2) {
       socket.emit('err', { message: 'Game full' });
       return;
     }
