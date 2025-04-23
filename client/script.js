@@ -1,97 +1,105 @@
-// script.js
+// === client/script.js ===
 const socket = io();
-let playerId;
-let gameCode;
-let phase;
+let gameCode; let playerId; let phase;
+let orient = 'H';
+const shipsToPlace = [];
 
-// DOM elements
 const newGameBtn = document.getElementById('newGameBtn');
 const joinGameBtn = document.getElementById('joinGameBtn');
 const gameCodeInput = document.getElementById('gameCodeInput');
 const menu = document.getElementById('menu');
 const gameUI = document.getElementById('gameUI');
+const shipPicker = document.getElementById('shipPicker');
+const orientSpan = document.getElementById('orient');
 const ownBoard = document.getElementById('ownBoard');
-const opponentBoard = document.getElementById('opponentBoard');
+const oppBoard = document.getElementById('opponentBoard');
 const statusDiv = document.getElementById('status');
 
-// Utility to build a 10x10 grid
+// Setup boards
 function renderBoards() {
-  ownBoard.innerHTML = '';
-  opponentBoard.innerHTML = '';
-  for (let y = 0; y < 10; y++) {
-    for (let x = 0; x < 10; x++) {
-      const cellA = document.createElement('div');
-      cellA.classList.add('cell');
-      cellA.dataset.x = x;
-      cellA.dataset.y = y;
-      ownBoard.appendChild(cellA);
-
-      const cellB = document.createElement('div');
-      cellB.classList.add('cell');
-      cellB.dataset.x = x;
-      cellB.dataset.y = y;
-      opponentBoard.appendChild(cellB);
-
-      // Click handlers
-      cellA.addEventListener('click', () => onOwnBoardClick(x, y));
-      cellB.addEventListener('click', () => onOpponentBoardClick(x, y));
-    }
+  ownBoard.innerHTML = ''; oppBoard.innerHTML='';
+  for (let y=0;y<10;y++)for(let x=0;x<10;x++){
+    [ownBoard,oppBoard].forEach(board=>{
+      const cell=document.createElement('div');cell.className='cell';
+      cell.dataset.x=x;cell.dataset.y=y;
+      board.appendChild(cell);
+    });
   }
 }
 
-function onOwnBoardClick(x, y) {
-  if (phase !== 'placing') return;
-  // TODO: allow user to toggle ship placement here (horizontal/vertical)
-  // For now, just send single-cell ship for demo
-  socket.emit('placeShips', { gameCode, ships: [{ coordinates: [{ x, y }] }] });
-}
-
-function onOpponentBoardClick(x, y) {
-  if (phase !== 'firing') return;
-  socket.emit('fire', { gameCode, x, y });
-}
-
-newGameBtn.onclick = () => socket.emit('newGame');
-joinGameBtn.onclick = () => socket.emit('joinGame', { gameCode: gameCodeInput.value.toUpperCase() });
-
-socket.on('gameCreated', ({ gameCode: code }) => {
-  gameCode = code;
-  playerId = socket.id;
-  alert(`Game Code: ${code}`);
-});
-
-socket.on('gameStarted', ({ state }) => {
-  phase = state.phase;
-  menu.style.display = 'none';
-  gameUI.style.display = 'block';
-  renderBoards();
-  statusDiv.textContent = 'Place your ships';
-});
-
-socket.on('phaseChange', ({ phase: newPhase }) => {
-  phase = newPhase;
-  statusDiv.textContent = phase === 'firing' ? 'Take your shot' : `Phase: ${phase}`;
-});
-
-socket.on('turnChange', ({ currentTurn }) => {
-  statusDiv.textContent = currentTurn === socket.id ? 'Your turn' : "Opponent's turn";
-});
-
-socket.on('shotResult', ({ shooter, x, y, hit, sunk, winner }) => {
-  const board = shooter === socket.id ? opponentBoard : ownBoard;
-  const cells = board.querySelectorAll('.cell');
-  for (const cell of cells) {
-    if (+cell.dataset.x === x && +cell.dataset.y === y) {
-      cell.classList.add(hit ? 'hit' : 'miss');
-      break;
-    }
+// Drag & drop handlers
+shipPicker.addEventListener('dragstart', e=>{
+  if(e.target.classList.contains('ship')){
+    e.dataTransfer.setData('text/plain', e.target.dataset.length);
   }
-  if (sunk && sunk.length) statusDiv.textContent += ' Ship sunk!';
-  if (winner) socket.emit(''); // no-op
+});
+ownBoard.addEventListener('dragover', e=>e.preventDefault());
+ownBoard.addEventListener('drop', e=>{
+  e.preventDefault();
+  const len = +e.dataTransfer.getData('text');
+  const x0 = +e.target.dataset.x;
+  const y0 = +e.target.dataset.y;
+  const coords = [];
+  for(let i=0;i<len;i++){
+    const x = orient==='H'? x0+i : x0;
+    const y = orient==='V'? y0+i : y0;
+    if(x>9||y>9) return alert('Out of bounds');
+    coords.push({x,y,hit:false});
+  }
+  // mark on UI
+  coords.forEach(c=>{
+    ownBoard.querySelector(`.cell[data-x='${c.x}'][data-y='${c.y}']`).classList.add('ship');
+  });
+  shipsToPlace.push({ id:Date.now()+Math.random(), coords });
+  e.target.remove();
+  if(shipsToPlace.length===5) {
+    // done placing
+    socket.emit('placeShips',{ gameCode, ships:shipsToPlace });
+    statusDiv.textContent='Waiting for opponent...';
+    shipPicker.hidden=true;
+  }
 });
 
-socket.on('gameOver', ({ winner }) => {
-  statusDiv.textContent = winner === socket.id ? 'You win!' : 'You lose.';
+// Orientation toggle
+document.getElementById('orientationToggle').addEventListener('click',()=>{
+  orient = orient==='H'?'V':'H';
+  orientSpan.textContent = orient;
 });
 
-socket.on('err', ({ message }) => alert(message));
+newGameBtn.onclick = ()=>socket.emit('newGame');
+joinGameBtn.onclick = ()=>socket.emit('joinGame',{ gameCode:gameCodeInput.value.toUpperCase() });
+
+socket.on('gameCreated',({gameCode:code})=>{
+  gameCode=code;playerId=socket.id;
+  alert('Game Code: '+code);
+});
+
+socket.on('gameStarted',({state})=>{
+  phase=state.phase;
+  menu.hidden=true;gameUI.hidden=false;
+  renderBoards(); statusDiv.textContent='Place ships';
+});
+
+socket.on('phaseChange',({phase:newPhase})=>{
+  phase=newPhase; statusDiv.textContent='Firing phase';
+});
+
+socket.on('turnChange',({currentTurn})=>{
+  statusDiv.textContent = currentTurn===socket.id?'Your turn':'Opponent turn';
+});
+
+oppBoard.addEventListener('click', e=>{
+  if(phase!=='firing')return;
+  const x=+e.target.dataset.x, y=+e.target.dataset.y;
+  socket.emit('fire',{ gameCode,x,y });
+});
+
+socket.on('shotResult',({shooter,x,y,hit,sunk,winner})=>{
+  const board = shooter===socket.id? oppBoard: ownBoard;
+  const cell = board.querySelector(`.cell[data-x='${x}'][data-y='${y}']`);
+  cell.classList.add(hit?'hit':'miss');
+  if(sunk.length) statusDiv.textContent+=' Ship sunk!';
+  if(winner) statusDiv.textContent = winner===socket.id?'You win!':'You lose.';
+});
+
+socket.on('err',({message})=>alert(message));
