@@ -1,34 +1,31 @@
-// === client/index.html ===
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Battleship</title>
+  <title>Battleship Multiplayer</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div id="menu">
-    <button id="newGameBtn">New Game</button>
+    <button id="newGameBtn">Start New Game</button>
+    <input id="gameCodeInput" placeholder="Enter game code" />
     <button id="joinGameBtn">Join Game</button>
-    <input id="gameCodeInput" placeholder="Enter Code" maxlength="6">
   </div>
 
-  <div id="gameUI" hidden>
-    <div id="shipPicker">
-      <div id="orientationToggle">Orientation: <span id="orient">H</span></div>
-      <div class="ship" draggable="true" data-length="5">Carrier (5)</div>
-      <div class="ship" draggable="true" data-length="4">Battleship (4)</div>
-      <div class="ship" draggable="true" data-length="3">Cruiser (3)</div>
-      <div class="ship" draggable="true" data-length="3">Submarine (3)</div>
-      <div class="ship" draggable="true" data-length="2">Destroyer (2)</div>
+  <div id="boards">
+    <!-- Player's own board -->
+    <div class="board-wrapper">
+      <div id="yourBoard" class="board"></div>
     </div>
-    <div id="boards">
-      <div id="ownBoard" class="board"></div>
+
+    <!-- Opponent's board -->
+    <div class="board-wrapper">
       <div id="opponentBoard" class="board"></div>
     </div>
-    <div id="status"></div>
   </div>
+
+  <div id="status"></div>
+
   <script src="/socket.io/socket.io.js"></script>
   <script src="script.js"></script>
 </body>
