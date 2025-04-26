@@ -1,0 +1,189 @@
+/*most of this was AI, as I dont know css */
+
+body {
+  font-family: Arial, sans-serif;
+  margin: 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+h1 {
+  order: 1;
+}
+
+.column-labels {
+  display: grid;
+  grid-template-columns: repeat(10, 50px);
+  gap: 2px;
+  margin-left: 30px; /* Match the space taken by row labels */
+  font-weight: bold;
+  order: 2;
+  text-align: center;
+}
+
+.column-labels div {
+  width: 50px;
+}
+
+.game-container {
+  display: flex;
+  margin-top: 20px;
+  order: 3;
+}
+
+/* Fix for grid layout */
+.game-boards-container {
+  display: flex;
+  justify-content: space-around;
+  flex-wrap: wrap;
+  margin-top: 30px;
+}
+
+.board-container {
+  margin: 0 20px 40px 20px;
+}
+
+.row-labels {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  margin-right: 10px;
+  font-weight: bold;
+  height: 500px;
+}
+
+.grid-container {
+  display: grid;
+  grid-template-columns: repeat(10, 50px);
+  grid-template-rows: repeat(10, 50px);
+  gap: 2px;
+}
+
+/* Different styling for opponent's grid */
+.opponent-grid .grid-item {
+  background-color: #b3d9ff;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.opponent-grid .grid-item:hover:not(.hit):not(.miss) {
+  background-color: #80bfff;
+  transform: scale(1.05);
+}
+
+.opponent-grid .grid-item.hit,
+.player-grid .grid-item.hit {
+  background-color: #ff6666 !important;
+  position: relative;
+}
+
+.opponent-grid .grid-item.miss,
+.player-grid .grid-item.miss {
+  background-color: #66ccff !important;
+  position: relative;
+}
+
+/* Add X mark for hits */
+.grid-item.hit::after {
+  content: '×';
+  font-size: 24px;
+  font-weight: bold;
+  color: white;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Add dot for misses */
+.grid-item.miss::after {
+  content: '•';
+  font-size: 24px;
+  color: white;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.grid-item {
+  width: 35px;
+  height: 35px;
+  background-color: #e0e0ff;
+  border: 1px solid #999;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.grid-item:hover {
+  background-color: #87ceeb;
+}
+
+/* Styling for ships */
+.ships-container {
+  margin-bottom: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px;
+  background-color: #f0f0f0;
+  border-radius: 5px;
+}
+
+.ship {
+  display: inline-block;
+  padding: 8px;
+  margin: 5px;
+  background-color: #555;
+  color: white;
+  cursor: grab;
+  border-radius: 4px;
+  user-select: none;
+}
+
+.ship.dragging {
+  opacity: 0.6;
+  cursor: grabbing;
+}
+
+.ship.placed {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Ship colors */
+.carrier { background-color: #564787; }
+.battleship { background-color: #466365; }
+.cruiser { background-color: #9B6A6C; }
+.submarine { background-color: #8B5A2B; }
+.destroyer { background-color: #634B66; }
+
+/* Placement indicators */
+.grid-item.valid-target {
+  background-color: #aaffaa;
+}
+
+.grid-item.invalid-target {
+  background-color: #ffaaaa;
+}
+
+/* Placed ships on grid */
+.grid-item.ship-placed {
+  background-color: #555;
+}
+
+.grid-item.ship-carrier { background-color: #564787; }
+.grid-item.ship-battleship { background-color: #466365; }
+.grid-item.ship-cruiser { background-color: #9B6A6C; }
+.grid-item.ship-submarine { background-color: #8B5A2B; }
+.grid-item.ship-destroyer { background-color: #634B66; }
+
+#rotate-button {
+  padding: 8px 16px;
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  cursor: pointer;
+}
