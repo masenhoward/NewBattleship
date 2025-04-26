@@ -8,8 +8,8 @@ const app    = express();
 const server = http.createServer(app);
 const io     = new Server(server);
 
-// serve everything under the root directory as static assets
-app.use(express.static(path.join(__dirname)));
+// serve static assets from client/
+app.use(express.static(path.join(__dirname, 'client')));
 
 // in-memory store of all games
 const games = {};  // { [gameCode]: { players: [socketId,...], playerNames: [name1, name2], state: { phase, currentTurn, ships, shots } } }
