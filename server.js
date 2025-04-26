@@ -8,11 +8,11 @@ const app    = express();
 const server = http.createServer(app);
 const io     = new Server(server);
 
-// serve everything under client/ as static assets
-app.use(express.static(path.join(__dirname, 'client')));
+// serve everything under the root directory as static assets
+app.use(express.static(path.join(__dirname)));
 
 // in-memory store of all games
-const games = {};  // { [gameCode]: { players: [socketId,...], state: { phase, currentTurn, ships, shots } } }
+const games = {};  // { [gameCode]: { players: [socketId,...], playerNames: [name1, name2], state: { phase, currentTurn, ships, shots } } }
 
 // simple 6-char uppercase code generator
 function generateGameCode() {
@@ -24,7 +24,7 @@ function createInitialState() {
   return {
     phase: 'waiting',
     currentTurn: null,
-    ships: [ [], [] ],       // two players’ ship arrays
+    ships: [ [], [] ],       // two player's ship arrays
     shots: {}                // { socketId: [ { x,y,hit } ] }
   };
 }
@@ -51,16 +51,22 @@ function checkWin(ships) {
   return ships.every(ship =>
     ship.coordinates.every(c => c.hit)
   );
+
 }
 
+
+
+
+// THIS MIGHT NEED TO GO INTO LOGIN HTML
 io.on('connection', socket => {
   console.log('connect', socket.id);
 
   // Host starts a new game
-  socket.on('newGame', () => {
+  socket.on('newGame', (data) => {
     const code = generateGameCode();
     games[code] = {
       players: [socket.id],
+      playerNames: [data.playerName || 'Player 1'],
       state: createInitialState()
     };
     socket.join(code);
@@ -68,7 +74,7 @@ io.on('connection', socket => {
   });
 
   // Joiner enters an existing code
-  socket.on('joinGame', ({ gameCode }) => {
+  socket.on('joinGame', ({ gameCode, playerName }) => {
     const game = games[gameCode];
     if (!game) {
       socket.emit('err', { message: 'Game not found' });
@@ -84,16 +90,27 @@ io.on('connection', socket => {
     }
 
     game.players.push(socket.id);
+    game.playerNames.push(playerName || 'Player 2');
     socket.join(gameCode);
-    io.in(gameCode).emit('playerJoined', {});
+    
+    // First notify both players that someone joined
+    io.in(gameCode).emit('playerJoined', {
+      players: game.playerNames
+    });
 
     // start placement once two players present
     if (game.players.length === 2) {
       game.state.phase       = 'placing';
       game.state.currentTurn = game.players[0];
-      io.in(gameCode).emit('gameStarted', { state: game.state });
+      io.in(gameCode).emit('gameStarted', { 
+        state: game.state,
+        players: game.playerNames
+      });
     }
   });
+
+// GAME PLAY
+
 
   // Both players send their ship arrays when done placing
   socket.on('placeShips', ({ gameCode, ships }) => {
