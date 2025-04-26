@@ -1,29 +1,317 @@
-<!DOCTYPE html>
+
+<!DOCTYPE html> 
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Battleship Multiplayer</title>
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-  <div id="menu">
-    <button id="newGameBtn">Start New Game</button>
-    <input  id="gameCodeInput" placeholder="Enter game code" />
-    <button id="joinGameBtn">Join Game</button>
-  </div>
+    <head>
+        <meta charset="UTF-8">
+        <title>Battleship</title>
+        <link rel="stylesheet" href="gui.css">
+        <style>
+             /* I desinged the basic framwork, and it was expanded upon by Ai, and a lot more was changed
+             during the made debug phase. This java scirpt and css in here are for the log in page, which 
+             was orignialy a seperate html, but I combined both of them to try to see if that was causing
+             issues with grid generation*/
+            body {
+                font-family: Arial, sans-serif;
+                max-width: 1200px;
+                margin: 0 auto;
+                padding: 20px;
+                text-align: center;
+            }
+            
+            /* Login screen styles */
+            .login-screen {
+                margin-top: 50px;
+                padding: 20px;
+                border: 1px solid #ccc;
+                border-radius: 8px;
+            }
+            
+            #error-message {
+                color: red;
+                margin-top: 10px;
+            }
+            
+            /* Game screen styles */
+            .game-screen {
+                display: none; /* Hidden initially */
+            }
+            
+            .status-indicator {
+                display: flex;
+                justify-content: center;
+                gap: 20px;
+                margin-bottom: 10px;
+            }
+            
+            .hits {
+                color: #cc0000;
+                font-weight: bold;
+            }
+            
+            .misses {
+                color: #006600;
+                font-weight: bold;
+            }
+            
+            button {
+                background-color: #4CAF50;
+                color: white;
+                padding: 10px 15px;
+                margin: 10px;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+            }
+            
+            button:hover {
+                background-color: #45a049;
+            }
+            
+            input {
+                padding: 10px;
+                margin: 10px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+            }
 
-  <div id="boards">
-    <div class="board-wrapper">
-      <div id="yourBoard" class="board"></div>
-    </div>
-    <div class="board-wrapper">
-      <div id="opponentBoard" class="board"></div>
-    </div>
-  </div>
+            /* Grid and ship styling */
+            .board-container {
+                display: inline-block;
+                margin: 15px;
+            }
+            
+            .grid-table {
+                border-collapse: collapse;
+            }
+            
+            .grid-table th, .grid-table td {
+                padding: 0;
+                text-align: center;
+            }
+            
+            .grid-item {
+                width: 32px;
+                height: 32px;
+                background-color: #e0e0ff;
+                border: 1px solid #999;
+                cursor: pointer;
+                padding: 0;
+                margin: 0;
+            }
+            
+            .player-grid .ship-placed {
+                background-color: #555;
+            }
+            
+            .ships-container {
+                margin: 20px 0;
+            }
+            
+            .ship {
+                display: inline-block;
+                padding: 8px;
+                margin: 5px;
+                background-color: #555;
+                color: white;
+                cursor: move;
+                border-radius: 4px;
+            }
+            
+            .ship.placed {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+            
+            .valid-target {
+                background-color: #8fff8f !important;
+            }
+            
+            .invalid-target {
+                background-color: #ff8f8f !important;
+            }
+            
+            #rotate-button {
+                display: block;
+                margin: 10px auto;
+            }
+        </style>
+    </head>
+    <body>
+        <!-- Login Screen (shown first) -->
+        <div id="login-screen">
+            <h1>Battleship Game</h1>
+            <div>
+                <input id="player-name" placeholder="Enter your name" required>
+            </div>
+            <button id="create-game-btn">Create New Game</button>
+            <div>
+                <input id="game-code-input" placeholder="Enter game code">
+                <button id="join-game-btn">Join Game</button>
+            </div>
+            <div id="error-message"></div>
+            
+            <div id="waiting-area" style="display: none; margin-top: 20px;">
+                <h2>Waiting for opponent...</h2>
+                <div>Game Code: <span id="waiting-code-display"></span></div>
+            </div>
+        </div>
 
-  <div id="status"></div>
+        <!-- Game Screen (hidden initially) -->
+        <div id="game-screen" style="display: none;">
+            <h1>Battleship Game</h1>
+            
+            <div class="player-info">
+                Playing as: <span id="player-name-display">Player</span>
+                | Game Code: <span id="game-code-display"></span>
+                <div id="turn-indicator">Waiting...</div>
+            </div>
+            
+            <!-- Ships container -->
+            <div class="ships-container">
+                <div class="ship carrier" draggable="true" data-ship-type="carrier" data-ship-length="5">Carrier (5)</div>
+                <div class="ship battleship" draggable="true" data-ship-type="battleship" data-ship-length="4">Battleship (4)</div>
+                <div class="ship cruiser" draggable="true" data-ship-type="cruiser" data-ship-length="3">Cruiser (3)</div>
+                <div class="ship submarine" draggable="true" data-ship-type="submarine" data-ship-length="3">Submarine (3)</div>
+                <div class="ship destroyer" draggable="true" data-ship-type="destroyer" data-ship-length="2">Destroyer (2)</div>
+                <button id="rotate-button">Rotate Ships</button>
+            </div>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js"></script>
-</body>
+            <!-- Replace the empty board containers with these pre-built grids -->
+
+            <div class="game-boards-container">
+                <div class="board-container player-grid"></div>
+                <div class="board-container opponent-grid"></div>
+            </div>
+
+            <!-- Add a Ready button -->
+            <button id="ready-button" style="display: block; margin: 10px auto;">Ready to Play!</button>
+        </div>
+
+        <script src="/socket.io/socket.io.js"></script>
+        <script>
+            // Initialize socket globally before any other scripts
+            window.socket = io("http://localhost:3000");
+        </script>
+        <script src="client.js"></script>
+        <script>
+            // Initialize Socket.io and handle login/game setup
+            document.addEventListener('DOMContentLoaded', function() {
+                const loginScreen = document.getElementById('login-screen');
+                const gameScreen = document.getElementById('game-screen');
+                const waitingArea = document.getElementById('waiting-area');
+                const errorMsg = document.getElementById('error-message');
+                const playerNameInput = document.getElementById('player-name');
+                const gameCodeInput = document.getElementById('game-code-input');
+                const waitingCodeDisplay = document.getElementById('waiting-code-display');
+                const gameCodeDisplay = document.getElementById('game-code-display');
+                const playerNameDisplay = document.getElementById('player-name-display');
+                
+                let playerName = '';
+                
+                try {
+                    // Initialize Socket.IO connection
+                    window.socket = io();
+                    console.log("Socket.IO initialized successfully");
+                    
+                    // Create game button
+                    document.getElementById('create-game-btn').addEventListener('click', function() {
+                        playerName = playerNameInput.value.trim();
+                        if (!playerName) {
+                            showError('Please enter your name');
+                            return;
+                        }
+                        
+                        // Store player name
+                        sessionStorage.setItem('playerName', playerName);
+                        
+                        // Create new game
+                        socket.emit('newGame', { playerName });
+                        
+                        // Show waiting area
+                        waitingArea.style.display = 'block';
+                    });
+                    
+                    // Join game button
+                    document.getElementById('join-game-btn').addEventListener('click', function() {
+                        playerName = playerNameInput.value.trim();
+                        const gameCode = gameCodeInput.value.trim();
+                        
+                        if (!playerName) {
+                            showError('Please enter your name');
+                            return;
+                        }
+                        if (!gameCode) {
+                            showError('Please enter a game code');
+                            return;
+                        }
+                        
+                        // Store player info
+                        sessionStorage.setItem('playerName', playerName);
+                        sessionStorage.setItem('gameCode', gameCode);
+                        
+                        // Join game
+                        socket.emit('joinGame', { gameCode, playerName });
+                    });
+                    
+                    // Socket event handlers for login flow
+                    socket.on('gameCreated', function(data) {
+                        const gameCode = data.gameCode;
+                        waitingCodeDisplay.textContent = gameCode;
+                        gameCodeDisplay.textContent = gameCode;
+                        
+                        // Store game code
+                        sessionStorage.setItem('gameCode', gameCode);
+                    });
+                    
+                    socket.on('playerJoined', function(data) {
+                        console.log('Player joined:', data);
+                    });
+                    
+                    socket.on('gameStarted', function(data) {
+                        console.log('Game started:', data);
+                        
+                        // Switch to game screen
+                        loginScreen.style.display = 'none';
+                        gameScreen.style.display = 'block';
+                        
+                        // Update player name display
+                        playerNameDisplay.textContent = playerName;
+                        
+                        // Now generate the grids
+                        console.log("About to generate grids...");
+                        
+                        try {
+                            if (typeof window.generateGrids === 'function') {
+                                window.generateGrids();
+                                console.log("Grid generation completed");
+                            } else {
+                                console.error("generateGrids is not a function!");
+                                // Fallback - force manual grid generation here
+                                const boardContainers = document.querySelectorAll('.board-container');
+                                console.log("Found board containers:", boardContainers.length);
+                            }
+                        } catch (err) {
+                            console.error("Error generating grids:", err);
+                        }
+                    });
+                    
+                    socket.on('err', function(data) {
+                        showError(data.message);
+                    });
+                    
+                } catch (e) {
+                    console.error("Failed to connect to Socket.IO server:", e);
+                    showError("Failed to connect to game server: " + (e.message || 'Unknown error'));
+                }
+                
+                function showError(message) {
+                    errorMsg.textContent = message;
+                    setTimeout(() => {
+                        errorMsg.textContent = '';
+                    }, 3000);
+                }
+            });
+        </script>
+    </body>
 </html>
+``` 
